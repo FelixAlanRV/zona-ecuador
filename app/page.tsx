@@ -48,7 +48,7 @@ export default async function EcuadorPage() {
     }
 
     const firstModuleId = roleDoc.modulesPermissions?.[0]?.moduleId;
-    let destination = "/ec/dashboard";
+    let destination = "/ec/dashboardfff";
 
     if (firstModuleId) {
       const moduleData = await db.collection("modules").findOne({ _id: new ObjectId(firstModuleId) });
@@ -57,6 +57,7 @@ export default async function EcuadorPage() {
       }
     }
 
+    
     await client.close();
     console.log("🚀 Redirigiendo a módulo inicial:", destination);
     redirect(destination);

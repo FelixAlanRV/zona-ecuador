@@ -2,163 +2,151 @@
 
 import { MongoClient, ObjectId } from "mongodb";
 import { revalidatePath } from "next/cache";
-import bcrypt from "bcryptjs";
-import { User, Member, Account, Role } from "@/types";
 
 const uri = process.env.MONGODB_URI!;
 const client = new MongoClient(uri);
 
+// Helper para obtener la DB
+async function getDb() {
+  await client.connect();
+  return client.db("testAuth");
+}
+
 /**
- * CREAR USUARIO
- * Crea el perfil, las credenciales y la membresía vinculada a Empresa y Zona.
+ * 🔍 BUSCAR USUARIO POR EMAIL
+ * Se usa para verificar si el usuario ya existe en el sistema global
  */
-export async function createUser(data: {
-  name: string,
-  username: string,
-  email: string,
-  role: string,
-  password: string,
-  companyId: string 
-}) {
+export async function getUserByEmail(email: string) {
   try {
-    await client.connect();
-    const db = client.db("testAuth");
-    const cId = new ObjectId(data.companyId);
-
-    // 1. BUSCAR LA ZONA DE ECUADOR POR NOMBRE
-    // Esto asegura que el zonaId no sea null y el layout permita el acceso
-    const ecuadorZone = await db.collection("zonas").findOne({ name: "Ecuador" });
-
-    // 2. Encriptar contraseña
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(data.password, salt);
-
-    // 3. Crear Usuario (users)
-    const initials = data.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-    const colors = ["bg-blue-600", "bg-purple-600", "bg-emerald-600", "bg-pink-600", "bg-orange-600"];
-    
-    const newUser = {
-      name: data.name,
-      userName: data.username,
-      email: data.email,
-      isActive: true,
-      initials,
-      avatarColor: colors[Math.floor(Math.random() * colors.length)],
-      createdAt: new Date(),
+    const db = await getDb();
+    const user = await db.collection("users").findOne({ email });
+    return { 
+      exists: !!user, 
+      name: user?.name || null 
     };
-
-    const userResult = await db.collection("users").insertOne(newUser);
-    const newUserId = userResult.insertedId;
-
-    // 4. Crear Cuenta (accounts)
-    await db.collection("accounts").insertOne({
-      userId: newUserId,
-      provider: "Email",
-      providerId: data.email,
-      password: hashedPassword,
-    });
-
-    // 5. Buscar el ID del Rol
-    const roleDoc = await db.collection("roles").findOne({ 
-      name: data.role,
-      companyId: cId 
-    });
-
-    // 6. Crear membresía CON ZONAID DE ECUADOR
-    const newMember = {
-      userId: newUserId,
-      companyId: cId,
-      zonaId: ecuadorZone?._id || null, // Se asigna el ID de la zona encontrada
-      roleId: roleDoc?._id || null,
-      status: "accepted",
-      createdAt: new Date(),
-    };
-
-    await db.collection("members").insertOne(newMember);
-
-    revalidatePath("/usuarios");
-    return { success: true };
-    
-  } catch (e) {
-    console.error("❌ Error al crear usuario:", e);
-    return { success: false, error: "No se pudo crear el usuario" };
-  } finally {
-    await client.close();
+  } catch (error) {
+    return { exists: false, name: null };
   }
 }
 
 /**
- * ACTUALIZAR USUARIO
- * Actualiza el perfil y sincroniza el Rol/Zona en la membresía de la empresa actual.
+ * 🚀 CREAR O VINCULAR USUARIO
  */
-export async function updateUser(userId: string, data: { name: string, role: string, companyId: string }) {
+export async function createUser(data: {
+  email: string,
+  role: string,
+  companyId: string
+}) {
   try {
-    await client.connect();
-    const db = client.db("testAuth");
-    const uId = new ObjectId(userId);
+    const db = await getDb();
     const cId = new ObjectId(data.companyId);
 
-    // 1. Obtener datos de la empresa (para asegurar zonaId)
-    const companyDoc = await db.collection("companies").findOne({ _id: cId });
+    // 1. Gestionar Identidad Global (Colección 'users')
+    let user = await db.collection("users").findOne({ email: data.email });
+    let userId: ObjectId;
 
-    // 2. Actualizar datos básicos
-    await db.collection<User>("users").updateOne(
-      { _id: uId },
-      { $set: { name: data.name, updatedAt: new Date() } }
-    );
+    if (!user) {
+      const userNamePrefix = data.email.split('@')[0];
+      
+      const userRes = await db.collection("users").insertOne({
+        name: userNamePrefix,
+        email: data.email,
+        userName: userNamePrefix,
+        isActive: true,
+        avatarColor: "bg-indigo-600",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      userId = userRes.insertedId;
+    } else {
+      userId = user._id;
+      const alreadyMember = await db.collection("members").findOne({ 
+        userId, 
+        companyId: cId 
+      });
+      
+      if (alreadyMember) {
+        return { success: false, error: "Este usuario ya esta registrado" };
 
-    // 3. Actualizar membresía de la empresa actual
-    const roleDoc = await db.collection<Role>("roles").findOne({ 
+      }
+    }
+
+    // 2. Obtener IDs de Rol y Zona
+    // Buscamos el rol
+    const roleDoc = await db.collection("roles").findOne({ name: data.role, companyId: cId });
+
+    // BUSCAR LA ZONA POR PATH (Ecuador /ec)
+    const zonaDoc = await db.collection("zonas").findOne({ path: "/ec" });
+
+    // 3. Crear Membresía (Acceso específico)
+    await db.collection("members").insertOne({
+      userId,
+      companyId: cId,
+      status: "accepted",
+      roleId: roleDoc?._id || null,
+      zonaId: zonaDoc?._id || null, // Ahora usa el ID de la zona encontrada por path
+      createdAt: new Date()
+    });
+
+    revalidatePath("/usuarios");
+    return { success: true, message: "Usuario vinculado correctamente" };
+  } catch (e) {
+    console.error("Error en createUser:", e);
+    return { success: false, error: "Error en el servidor al procesar el registro" };
+  }
+}
+
+/**
+ * 📝 ACTUALIZAR PERMISOS (UPDATE)
+ * Solo modifica la relación en 'members', no toca la identidad global.
+ */
+export async function updateUser(userId: string, data: { role: string, companyId: string }) {
+  try {
+    const db = await getDb();
+    const cId = new ObjectId(data.companyId);
+    const uId = new ObjectId(userId);
+
+    // Buscamos el ID del nuevo rol en esta empresa
+    const roleDoc = await db.collection("roles").findOne({ 
       name: data.role, 
       companyId: cId 
     });
 
-    if (roleDoc && companyDoc) {
-      await db.collection<Member>("members").updateOne(
-        { userId: uId, companyId: cId },
-        { 
-          $set: { 
-            roleId: roleDoc._id,
-            zonaId: companyDoc.zonaId, // Aseguramos que la zona sea correcta
-            updatedAt: new Date()
-          } 
-        }
-      );
-    }
+    if (!roleDoc) return { success: false, error: "El rol seleccionado no es válido" };
+
+    // Actualizamos el rol dentro de la membresía de ESTA empresa
+    const result = await db.collection("members").updateOne(
+      { userId: uId, companyId: cId },
+      { $set: { roleId: roleDoc._id, updatedAt: new Date() } }
+    );
+
+    if (result.matchedCount === 0) return { success: false, error: "No se encontró el vínculo de membresía" };
 
     revalidatePath("/usuarios");
     return { success: true };
   } catch (e) {
-    console.error("❌ Error al actualizar:", e);
-    return { success: false, error: "Error al actualizar" };
-  } finally {
-    await client.close();
+    return { success: false, error: "Error al actualizar los permisos" };
   }
 }
 
 /**
- * ELIMINAR USUARIO
- * Borrado total del sistema (Cascada)
+ * 🗑️ RETIRAR ACCESO (DELETE)
+ * Elimina el registro de 'members'. El usuario sigue existiendo en 'users'.
  */
-export async function deleteUser(userId: string) {
+export async function deleteUser(userId: string, companyId: string) {
   try {
-    await client.connect();
-    const db = client.db("testAuth");
-    const uId = new ObjectId(userId);
-
-    // Ejecutamos eliminaciones en todas las colecciones donde el usuario tiene presencia
-    await Promise.all([
-      db.collection("users").deleteOne({ _id: uId }),
-      db.collection("members").deleteMany({ userId: uId }),
-      db.collection("accounts").deleteMany({ userId: uId })
-    ]);
+    const db = await getDb();
+    
+    // Solo eliminamos la relación con la empresa actual
+    await db.collection("members").deleteOne({ 
+      userId: new ObjectId(userId), 
+      companyId: new ObjectId(companyId) 
+    });
 
     revalidatePath("/usuarios");
     return { success: true };
   } catch (e) {
-    console.error("❌ Error al eliminar:", e);
-    return { success: false, error: "No se pudo eliminar el usuario" };
-  } finally {
-    await client.close();
+    console.error("Error en deleteUser:", e);
+    return { success: false, error: "No se pudo retirar el acceso del colaborador" };
   }
 }

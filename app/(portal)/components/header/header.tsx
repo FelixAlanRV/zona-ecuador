@@ -24,9 +24,18 @@ import { ClientOnly } from '@/components/client-only';
 type Props = {
   onOpenNav?: () => void;
   allowedCountries?: string[]; // Array de nombres: ["Ecuador", "Costa Rica"]
+  user: {
+    id: string;
+    name: string;
+    email: string;
+  };
 };
 
-export default function Header({ onOpenNav, allowedCountries = [] }: Props) {
+export default function Header({
+  onOpenNav,
+  allowedCountries = [],
+  user, // 👈 AQUI
+}: Props) {
   const settings = useSettingsContext();
   const lgUp = useResponsive({ query: 'up', start: 'lg' });
   const offsetTop = useOffSetTop({ top: HEADER.H_DESKTOP });
@@ -111,7 +120,7 @@ export default function Header({ onOpenNav, allowedCountries = [] }: Props) {
         </ClientOnly>
 
         <ClientOnly>
-          <AccountPopover />
+          <AccountPopover user={user} />
         </ClientOnly>
       </div>
     </>

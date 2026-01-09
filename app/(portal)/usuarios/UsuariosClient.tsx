@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition, useEffect } from "react"
-import { Search, Pencil, Trash2, Loader2, CheckCircle2, AlertTriangle, Eye, EyeOff } from "lucide-react"
+import { Search, Pencil, Trash2, Loader2, CheckCircle2, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -12,26 +12,21 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { createUser, updateUser, deleteUser } from "./actions"
 import { toast } from "sonner"
 
-interface CreateUserPayload {
-  name: string;
-  username: string;
-  email: string;
-  role: string;
-  password: string;
-  companyId: string;
-}
-
 export default function UsuariosClient({ initialUsers, roles }: { initialUsers: any[], roles: any[] }) {
   const [isPending, startTransition] = useTransition();
   const [openCreate, setOpenCreate] = useState(false);
   const [openEdit, setOpenEdit] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentCompanyId, setCurrentCompanyId] = useState<string>("");
 
+  const AVATAR_COLORS: Record<string, string> = {
+    "bg-purple-600": "bg-purple-600",
+    "bg-indigo-600": "bg-indigo-600",
+    "bg-blue-600": "bg-blue-600",
+  };
   useEffect(() => {
     const companyId = document.cookie
       .split('; ')
@@ -40,24 +35,29 @@ export default function UsuariosClient({ initialUsers, roles }: { initialUsers: 
     if (companyId) setCurrentCompanyId(companyId);
   }, []);
 
-  const [createData, setCreateData] = useState({
-    name: "",
-    username: "",
-    email: "",
-    role: "",
-    password: ""
-  });
-
+  const [createData, setCreateData] = useState({ email: "", role: "" });
   const [editData, setEditData] = useState({ name: "", role: "" });
 
+  // Función para generar iniciales dinámicamente desde el nombre
+  const getInitials = (name: string) => {
+    if (!name) return "U";
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return parts[0].slice(0, 2).toUpperCase();
+  };
+
   const handleCreate = () => {
-    if (!currentCompanyId) return toast.error("Seleccione una empresa primero");
+    if (!currentCompanyId) return toast.error("Error de sesión: ID no encontrado");
+    if (!createData.email || !createData.role) return toast.error("Email y Rol son obligatorios");
+
     startTransition(async () => {
-      const res = await createUser({ ...createData, companyId: currentCompanyId });
+      const res = await createUser({ email: createData.email, role: createData.role, companyId: currentCompanyId });
       if (res.success) {
-        toast.success("Usuario registrado con éxito");
+        toast.success("Usuario agregado exitosamente");
         setOpenCreate(false);
-        setCreateData({ name: "", username: "", email: "", role: "", password: "" });
+        setCreateData({ email: "", role: "" });
       } else {
         toast.error(res.error || "Error al crear");
       }
@@ -65,12 +65,11 @@ export default function UsuariosClient({ initialUsers, roles }: { initialUsers: 
   };
 
   const handleUpdate = () => {
-    if (!currentCompanyId) return toast.error("No se detectó la empresa actual");
     startTransition(async () => {
-      if (!selectedUser) return;
-      const res = await updateUser(selectedUser.id, { ...editData, companyId: currentCompanyId });
+      if (!selectedUser || !currentCompanyId) return;
+      const res = await updateUser(selectedUser.id, { role: editData.role, companyId: currentCompanyId });
       if (res.success) {
-        toast.success("Usuario actualizado correctamente");
+        toast.success("Permisos actualizados");
         setOpenEdit(false);
       } else {
         toast.error(res.error || "Error al actualizar");
@@ -80,11 +79,13 @@ export default function UsuariosClient({ initialUsers, roles }: { initialUsers: 
 
   const handleDelete = () => {
     startTransition(async () => {
-      if (!selectedUser) return;
-      const res = await deleteUser(selectedUser.id);
+      if (!selectedUser || !currentCompanyId) return;
+      const res = await deleteUser(selectedUser.id, currentCompanyId);
       if (res.success) {
-        toast.success("Acceso eliminado");
+        toast.success("Acceso revocado");
         setOpenDelete(false);
+      } else {
+        toast.error(res.error || "Error al eliminar");
       }
     });
   };
@@ -101,7 +102,7 @@ export default function UsuariosClient({ initialUsers, roles }: { initialUsers: 
       <div className="flex justify-between items-center mb-10">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Administración de usuarios</h1>
-          <p className="text-sm text-gray-400 mt-1">Gestión de personal para la empresa seleccionada</p>
+          <p className="text-sm text-gray-400 mt-1">Gestión de personal y control de accesos</p>
         </div>
         <div className="flex gap-3">
           <Button onClick={() => setOpenCreate(true)} className="bg-gray-900 hover:bg-black rounded-xl px-6 font-semibold text-white">Nuevo usuario</Button>
@@ -131,8 +132,10 @@ export default function UsuariosClient({ initialUsers, roles }: { initialUsers: 
             {initialUsers.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase())).map((user) => (
               <tr key={user.id} className="hover:bg-gray-50/30 transition-colors">
                 <td className="px-6 py-5 flex items-center gap-4">
-                  <Avatar className={`h-10 w-10 ${user.avatarColor} text-white`}>
-                    <AvatarFallback className={`${user.avatarColor} text-white font-bold`}>{user.initials}</AvatarFallback>
+                  <Avatar className={`h-10 w-10 ${AVATAR_COLORS[user.avatarColor] || 'bg-gray-500'} text-white`}>
+                    <AvatarFallback className={`${AVATAR_COLORS[user.avatarColor] || 'bg-gray-500'} text-white font-bold`}>
+                      {getInitials(user.name)}
+                    </AvatarFallback>
                   </Avatar>
                   <span className="text-sm font-medium text-gray-700">{user.name}</span>
                 </td>
@@ -152,19 +155,12 @@ export default function UsuariosClient({ initialUsers, roles }: { initialUsers: 
                 </td>
                 <td className="px-6 py-5">
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => prepareEdit(user)}
-                    className="p-1.5 hover:bg-blue-100 rounded-md text-blue-600 transition-colors "
-                    >
+                    <button onClick={() => prepareEdit(user)} className="p-1.5 hover:bg-blue-100 rounded-md text-blue-600 transition-colors">
                       <Pencil className="h-4 w-4" />
                     </button>
-                    <button
-                      onClick={() => { setSelectedUser(user); setOpenDelete(true); }}
-                    className="p-1.5 hover:bg-red-100 rounded-md text-red-500 transition-colors "
-                    >
+                    <button onClick={() => { setSelectedUser(user); setOpenDelete(true); }} className="p-1.5 hover:bg-red-100 rounded-md text-red-500 transition-colors">
                       <Trash2 className="h-4 w-4" />
                     </button>
-                    
                   </div>
                 </td>
               </tr>
@@ -176,39 +172,31 @@ export default function UsuariosClient({ initialUsers, roles }: { initialUsers: 
       {/* MODAL REGISTRO */}
       <Dialog open={openCreate} onOpenChange={setOpenCreate}>
         <DialogContent className="sm:max-w-[450px] p-0 border-none rounded-3xl overflow-hidden shadow-2xl">
-          <DialogHeader className="p-8 border-b border-gray-50">
-            <DialogTitle className="text-center text-xl font-bold">Registro de usuario</DialogTitle>
+          <DialogHeader className="p-8 border-b border-gray-50 pb-0">
+            <DialogTitle className="text-center text-xl font-bold">Nuevo usuario</DialogTitle>
           </DialogHeader>
-          <div className="p-8 space-y-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Nombre</label>
-              <Input value={createData.name} onChange={(e) => setCreateData({ ...createData, name: e.target.value })} className="h-12 rounded-xl border-gray-200" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Usuario</label>
-              <Input value={createData.username} onChange={(e) => setCreateData({ ...createData, username: e.target.value })} className="h-12 rounded-xl border-gray-200" />
-            </div>
+          <div className="p-8 space-y-4 pt-4">
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Email</label>
-              <Input value={createData.email} onChange={(e) => setCreateData({ ...createData, email: e.target.value })} className="h-12 rounded-xl border-gray-200" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Contraseña</label>
-              <div className="relative">
-                <Input type={showPassword ? "text" : "password"} value={createData.password} onChange={(e) => setCreateData({ ...createData, password: e.target.value })} className="h-12 rounded-xl border-gray-200" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
+              <Input
+                value={createData.email}
+                onChange={(e) => setCreateData({ ...createData, email: e.target.value })}
+                placeholder="correo@ejemplo.com"
+                className="h-12 rounded-xl border-gray-200"
+              />
             </div>
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Rol</label>
               <Select onValueChange={(v) => setCreateData({ ...createData, role: v })}>
-                <SelectTrigger className="h-12 rounded-xl border-gray-200"><SelectValue placeholder="Seleccionar rol" /></SelectTrigger>
-                <SelectContent>{roles.map(r => <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>)}</SelectContent>
+                <SelectTrigger className="h-12 rounded-xl border-gray-200">
+                  <SelectValue placeholder="Seleccionar rol" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map(r => <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>)}
+                </SelectContent>
               </Select>
             </div>
-            <Button onClick={handleCreate} disabled={isPending} className="w-full h-14 bg-gray-900 rounded-2xl mt-4 font-bold text-white text-lg hover:bg-black">
+            <Button onClick={handleCreate} disabled={isPending} className="w-full h-12 bg-gray-900 rounded-2xl mt-4 font-bold text-white text-md hover:bg-black">
               {isPending ? <Loader2 className="animate-spin" /> : "Guardar"}
             </Button>
           </div>
@@ -218,53 +206,55 @@ export default function UsuariosClient({ initialUsers, roles }: { initialUsers: 
       {/* MODAL ACTUALIZAR */}
       <Dialog open={openEdit} onOpenChange={setOpenEdit}>
         <DialogContent className="sm:max-w-[450px] p-0 border-none rounded-3xl overflow-hidden shadow-2xl">
-          <DialogHeader className="p-8 border-b border-gray-50">
-            <DialogTitle className="text-center text-xl font-bold">Actualizar usuario</DialogTitle>
+          <DialogHeader className="p-8 border-b border-gray-50 pb-0">
+            <DialogTitle className="text-center text-xl font-bold">Actualizar permisos</DialogTitle>
           </DialogHeader>
           <div className="p-8 space-y-6">
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Nombre</label>
-              <Input
-                value={editData.name}
-                onChange={(e) => setEditData({ ...editData, name: e.target.value })}
-                className="h-12 rounded-xl border-gray-200 focus:ring-blue-500"
-                autoFocus
-                onFocus={(e) => {
-                  const val = e.target.value;
-                  e.target.setSelectionRange(val.length, val.length);
-                }}
-              />
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Usuario</label>
+              <Input value={editData.name} disabled className="h-12 rounded-xl border-gray-100 bg-gray-50 font-medium" />
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Rol</label>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Rol asignado</label>
               <Select value={editData.role} onValueChange={(v) => setEditData({ ...editData, role: v })}>
-                <SelectTrigger className="h-12 rounded-xl border-gray-200"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
-                <SelectContent>{roles.map(r => <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>)}</SelectContent>
+                <SelectTrigger className="h-12 rounded-xl border-gray-200">
+                  <SelectValue placeholder="Seleccionar rol" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map(r => <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>)}
+                </SelectContent>
               </Select>
             </div>
-            <Button onClick={handleUpdate} disabled={isPending} className="w-full h-14 bg-gray-900 rounded-2xl font-bold text-white text-lg hover:bg-black">
-              {isPending ? <Loader2 className="animate-spin" /> : "Actualizar"}
+            <Button onClick={handleUpdate} disabled={isPending} className="w-full h-12 bg-gray-900 rounded-2xl font-bold text-white text-md hover:bg-black">
+              {isPending ? <Loader2 className="animate-spin" /> : "Guardar Cambios"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* MODAL ELIMINAR */}
+      {/* MODAL ELIMINAR USUARIO */}
       <AlertDialog open={openDelete} onOpenChange={setOpenDelete}>
         <AlertDialogContent className="rounded-[2rem] p-8 border-none shadow-2xl">
           <AlertDialogHeader>
             <div className="mx-auto bg-red-50 h-20 w-20 rounded-full flex items-center justify-center mb-6">
               <AlertTriangle className="h-10 w-10 text-red-500" />
             </div>
-            <AlertDialogTitle className="text-center text-2xl font-bold text-gray-900">¿Eliminar acceso?</AlertDialogTitle>
+            <AlertDialogTitle className="text-center text-2xl font-bold text-gray-900">
+              ¿Eliminar usuario?
+            </AlertDialogTitle>
             <AlertDialogDescription className="text-center text-lg text-gray-500">
-              Se quitará el permiso de <span className="font-bold text-gray-800">{selectedUser?.name}</span> para esta empresa.
+              Estás a punto de eliminar a <span className="font-bold text-gray-800">{selectedUser?.name}</span> de la lista de usuarios. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="sm:justify-center gap-4 mt-8 px-6">
-            <AlertDialogCancel className="rounded-2xl h-12 px-8 font-semibold border-gray-200">Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700 rounded-2xl h-12 px-8 font-bold text-white transition-all shadow-md">
-              {isPending ? <Loader2 className="animate-spin" /> : "Sí, eliminar"}
+            <AlertDialogCancel className="rounded-2xl h-12 px-8 font-semibold border-gray-200">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700 rounded-2xl h-12 px-8 font-bold text-white transition-all shadow-md"
+            >
+              {isPending ? <Loader2 className="animate-spin" /> : "Sí, eliminar usuario"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

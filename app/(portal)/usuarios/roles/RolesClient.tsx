@@ -68,16 +68,23 @@ export default function RolesClient({ initialRoles, availableModules }: any) {
     }
   }, [initialRoles]);
 
-  useEffect(() => {
-    if (!availableModules || availableModules.length === 0) return;
-    const currentRole = initialRoles.find((r: any) => r.id === selectedRoleId);
-    const matrix = availableModules.map((mod: any) => {
+useEffect(() => {
+  if (!availableModules || availableModules.length === 0) return;
+
+  const currentRole = initialRoles.find((r: any) => r.id === selectedRoleId);
+
+  const matrix = availableModules
+    // ✅ Ordenar por position antes de mapear
+    .sort((a: any, b: any) => (a.position ?? 999) - (b.position ?? 999))
+    .map((mod: any) => {
       const targetId = mod.id.toString();
       const saved = currentRole?.modulesPermissions?.find((p: any) => {
         const pId = (p.moduleId?.$oid || p.moduleId || "").toString();
         return pId === targetId;
       });
+
       let allowed = Array.isArray(saved?.allowedPermissions) ? saved.allowedPermissions : [];
+
       return {
         moduleId: targetId,
         module: mod.nombre,
@@ -87,10 +94,13 @@ export default function RolesClient({ initialRoles, availableModules }: any) {
         editar: allowed.includes("update"),
         eliminar: allowed.includes("delete"),
         exportar: allowed.includes("export"),
+        position: mod.position ?? 999
       };
     });
-    setPermissions(matrix);
-  }, [selectedRoleId, initialRoles, availableModules]);
+
+  setPermissions(matrix);
+}, [selectedRoleId, initialRoles, availableModules]);
+
 
   // ACCIONES
   const handleCreateRole = () => {
@@ -98,7 +108,7 @@ export default function RolesClient({ initialRoles, availableModules }: any) {
     startCreateTransition(async () => {
       const result = await createRole(newRoleName, currentCompanyId);
       if (result.success) {
-        toast.success("Rol creado");
+        toast.success("Rol creado exitósamente");
         setNewRoleName("");
         setIsModalOpen(false);
         window.location.reload();
@@ -155,14 +165,14 @@ export default function RolesClient({ initialRoles, availableModules }: any) {
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px] p-0 overflow-hidden border-none rounded-2xl shadow-2xl">
-            <DialogHeader className="p-6 pb-4 border-b border-gray-100">
+            <DialogHeader className="p-6 pb-4 border-b border-gray-100 pb-0">
               <DialogTitle className="text-xl font-bold text-center text-gray-800">Crear nuevo rol</DialogTitle>
             </DialogHeader>
             <div className="p-8 space-y-6">
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-gray-700">Nombre del rol</label>
                 <Input
-                  placeholder="Ej. Auditor de Ventas"
+                  placeholder="Ej. Administrador"
                   value={newRoleName}
                   onChange={(e) => setNewRoleName(e.target.value)}
                   className="h-12 border-gray-200 focus:ring-blue-500 rounded-xl"

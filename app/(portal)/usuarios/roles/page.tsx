@@ -4,7 +4,6 @@ import RolesClient from "./RolesClient";
 
 export const dynamic = 'force-dynamic';
 
-
 async function getRolesData(companyId: string | undefined) {
   if (!companyId) return { roles: [], availableModules: [] };
 
@@ -24,16 +23,17 @@ async function getRolesData(companyId: string | undefined) {
       (r.modulesPermissions || []).map((p: any) => new ObjectId(p.moduleId))
     );
 
-    // 3️⃣ Traer solo los módulos que pertenecen a estos roles
+    // 3️⃣ Traer solo los módulos que pertenecen a estos roles y ordenarlos por position
     const modules = await db.collection("modules")
       .find({ _id: { $in: moduleIdsInRoles } })
-      .sort({ posicion: 1 })
+      .sort({ position: 1 }) // ✅ Orden por posición
       .toArray();
 
     const availableModules = modules.map(m => ({
       id: m._id.toString(),
       nombre: m.name,
       icon: m.icon || "FileText",
+      position: m.position ?? 999 // ✅ incluimos position para usar en frontend
     }));
 
     // 4️⃣ Formatear roles para el frontend
@@ -55,13 +55,13 @@ async function getRolesData(companyId: string | undefined) {
   }
 }
 
-
 export default async function RolesPage() {
   const cookieStore = await cookies();
   const currentCompanyId = cookieStore.get("current_company_id")?.value;
 
   const data = await getRolesData(currentCompanyId);
 
+  
   // 🔍 Imprimir lo que se obtuvo de la DB
   console.log("📊 [DEBUG] Roles obtenidos:", JSON.stringify(data.roles, null, 2));
   console.log("📊 [DEBUG] Módulos disponibles:", JSON.stringify(data.availableModules, null, 2));

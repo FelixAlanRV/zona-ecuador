@@ -4,6 +4,7 @@ import { jwtVerify } from 'jose';
 import { redirect } from "next/navigation";
 import { SettingsProvider } from '@/utils/context/settings-provider';
 import DashboardLayoutContent from './DashboardLayoutContent';
+import { Module } from '@/types';
 
 async function getEcuadorContext(userId: string) {
   const uri = process.env.MONGODB_URI!;
@@ -45,25 +46,28 @@ async function getEcuadorContext(userId: string) {
           zona: COUNTRY_NAME,
           logo: company?.logo || ""
         },
-        modules: detailedModules.map(m => {
-          const perm = rolePerms.find((rp: any) => rp.moduleId.toString() === m._id.toString());
-          const allowed = perm?.allowedPermissions ? Object.values(perm.allowedPermissions) : [];
-          
-          let modUrl = m.url || "";
-          if (modUrl && !modUrl.startsWith('/')) modUrl = `/${modUrl}`;
+        modules: detailedModules
+          .map(m => {
+            const perm = rolePerms.find((rp: any) => rp.moduleId.toString() === m._id.toString());
+            const allowed = perm?.allowedPermissions ? Object.values(perm.allowedPermissions) : [];
 
-          return {
-            nombre: m.name || m.nombre,
-            url: modUrl,
-            icono: m.icon || 'File',
-            acciones: {
-              visualizar: allowed.includes("read"),
-              crear: allowed.includes("create"),
-              editar: allowed.includes("update"),
-              eliminar: allowed.includes("delete"),
-            }
-          };
-        })
+            let modUrl = m.url || "";
+            if (modUrl && !modUrl.startsWith('/')) modUrl = `/${modUrl}`;
+
+            return {
+              nombre: m.name || m.nombre,
+              url: modUrl,
+              icono: m.icon || 'File',
+              position: m.position ?? 999,
+              acciones: {
+                visualizar: allowed.includes("read"),
+                crear: allowed.includes("create"),
+                editar: allowed.includes("update"),
+                eliminar: allowed.includes("delete"),
+              }
+            };
+          })
+          .sort((a, b) => a.position - b.position)
       };
     }));
 
@@ -89,10 +93,20 @@ export default async function DashboardLayout({ children, params }: { children: 
   if (!token) redirect('/login');
 
   const { payload } = await jwtVerify(token, new TextEncoder().encode(process.env.JWT_SECRET!));
+
+  const user = {
+    id: payload.id as string,
+    name: payload.name as string,
+    email: payload.email as string,
+  };
+
   const context = await getEcuadorContext(payload.id as string);
 
   console.log("===== CONTEXTO OBTENIDO =====");
-  console.log(JSON.stringify(context, null, 2)); // imprime navDataByCompany, allowedCompanies y availableCountries
+  console.log(JSON.stringify(context, null, 2));
+
+  // 🔑 Obtenemos la empresa activa desde la cookie
+  const currentCompanyId = cookieStore.get('current_company_id')?.value || context.allowedCompanies[0]?.id;
 
   const headerList = await headers();
   const currentPath = headerList.get('x-current-path') || "";
@@ -100,34 +114,30 @@ export default async function DashboardLayout({ children, params }: { children: 
   // Normalización de ruta para validación
   const parts = currentPath.split('/').filter(Boolean);
   const detectedPais = parts.length > 0 && parts[0].length === 2 ? parts[0] : "ec";
-  
-  if (parts.length > 0 && parts[0] === detectedPais) {
-    parts.shift();
-  }
-  
+
+  if (parts.length > 0 && parts[0] === detectedPais) parts.shift();
+
   const normalizedCurrent = parts.length === 0 ? "/" : `/${parts.join('/')}`;
 
-  // Obtener rutas únicas permitidas de todas las compañías asignadas
-  const allAllowedUrls = Array.from(new Set(
-    Object.values(context.navDataByCompany)
-      .flat()
-      .map((m: any) => m.url)
-      .filter(Boolean)
-  ));
+  // 🔐 Validación de rutas SOLO para la empresa activa
+const allowedUrlsForCompany = ((context.navDataByCompany[currentCompanyId] || []) as Module[])
+  .filter(m => m.acciones?.visualizar)
+  .map(m => m.url)
+  .filter(Boolean);
 
-  console.log("===== RUTAS PERMITIDAS =====");
-  console.log(allAllowedUrls);
 
   const isDashboardBase = normalizedCurrent === "/" || normalizedCurrent === "/dashboard";
-  
-  const isAllowed = isDashboardBase || allAllowedUrls.some(url => {
+
+  const isAllowed = isDashboardBase || allowedUrlsForCompany.some(url => {
     const cleanUrl = url.endsWith('/') && url !== '/' ? url.slice(0, -1) : url;
     return normalizedCurrent === cleanUrl || normalizedCurrent.startsWith(`${cleanUrl}/`);
   });
 
   if (!isAllowed) {
     console.log("Ruta denegada:", normalizedCurrent);
-    redirect(`/${detectedPais}/unauthorized`);
+    // Evitar duplicar el prefijo del país cuando la ruta ya lo contiene
+    const hasCountryPrefix = currentPath.startsWith(`/${detectedPais}`);
+    redirect(hasCountryPrefix ? '/unauthorized' : `/${detectedPais}/unauthorized`);
   } else {
     console.log("Ruta permitida:", normalizedCurrent);
   }
@@ -144,6 +154,7 @@ export default async function DashboardLayout({ children, params }: { children: 
       }}
     >
       <DashboardLayoutContent
+        user={user}
         navDataByCompany={context.navDataByCompany}
         allowedCompanies={context.allowedCompanies}
         availableCountries={context.availableCountries}

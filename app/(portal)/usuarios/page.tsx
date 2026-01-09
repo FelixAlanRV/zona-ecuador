@@ -61,7 +61,6 @@ async function getData(companyId: string | undefined) {
       email: u.email,
       roleName: u.roleDetails?.name || "Sin Rol",
       isActive: u.isActive ?? false,
-      initials: u.initials || "U",
       avatarColor: u.avatarColor || "bg-blue-600",
     }));
 

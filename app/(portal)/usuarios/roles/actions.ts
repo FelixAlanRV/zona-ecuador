@@ -19,7 +19,6 @@ export async function createRole(name: string, companyId: string) {
       description: "", 
       companyId: new ObjectId(companyId),
       modulesPermissions: [], 
-      allowedCountries: [], 
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -69,18 +68,17 @@ export async function updateRoleName(roleId: string, newName: string, companyId:
   }
 }
 
-/**
- * ACTUALIZA PERMISOS Y MATRIZ DE MÓDULOS
- */
+
 export async function updateRolePermissions(
-  roleId: string, 
-  permissionsMatrix: any[], 
-  companyId: string 
+  roleId: string,
+  permissionsMatrix: { moduleId: string; visualizar?: boolean; crear?: boolean; editar?: boolean; eliminar?: boolean; exportar?: boolean }[],
+  companyId: string
 ) {
   try {
     await client.connect();
     const db = client.db("testAuth");
 
+    // Convertir a array de permisos minimalista
     const modulesPermissions = permissionsMatrix.map((row) => {
       const allowed: string[] = [];
       if (row.visualizar) allowed.push("read");
@@ -91,23 +89,14 @@ export async function updateRolePermissions(
 
       return {
         moduleId: new ObjectId(row.moduleId),
-        moduleName: row.module, 
-        pais: row.pais || null,         
         allowedPermissions: allowed
       };
     });
 
+    // Actualizar rol
     const result = await db.collection("roles").updateOne(
-      { 
-        _id: new ObjectId(roleId), 
-        companyId: new ObjectId(companyId) 
-      },
-      { 
-        $set: { 
-          modulesPermissions: modulesPermissions,
-          updatedAt: new Date() 
-        } 
-      }
+      { _id: new ObjectId(roleId), companyId: new ObjectId(companyId) },
+      { $set: { modulesPermissions, updatedAt: new Date() } }
     );
 
     revalidatePath("/usuarios/roles");

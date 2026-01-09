@@ -59,7 +59,20 @@ export interface UserDisplay {
   email: string;
   roleName: string;
   // NUEVO: Para saber qué países puede ver este usuario en la tabla
-  initials: string;
   avatarColor: string;
 }
 
+
+
+export interface Module {
+  nombre: string;
+  url: string;
+  icono: string;
+  position: number;
+  acciones: {
+    visualizar: boolean;
+    crear: boolean;
+    editar: boolean;
+    eliminar: boolean;
+  };
+};

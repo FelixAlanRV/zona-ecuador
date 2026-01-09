@@ -21,6 +21,7 @@ import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart"
 
 import { CheckCircle, Download, Upload, Edit } from "lucide-react";
 import { CustomBarTooltip } from "@/components/chart"
+import { formatNumber } from "@/lib/utils"
 
 // Datos simulados
 const last7Days = [
@@ -277,7 +278,7 @@ export default function Dashboard() {
   const metrics = [
     {
       title: "Documentos Recibidos",
-      value: totalDocuments.toLocaleString(),
+      value: formatNumber(totalDocuments),
       change: "+12.5%",
       trend: "up",
       icon: FileText,
@@ -555,7 +556,7 @@ export default function Dashboard() {
                   <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">Total</span>
                   <div className="flex items-baseline gap-1">
                     <span className="text-base font-bold text-blue-700 dark:text-blue-300">
-                      {totalDocuments.toLocaleString()}
+                      {formatNumber(totalDocuments)}
                     </span>
                   </div>
                 </div>
@@ -569,7 +570,7 @@ export default function Dashboard() {
                   <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">Aceptados</span>
                   <div className="flex items-baseline gap-1">
                     <span className="text-base font-bold text-emerald-700 dark:text-emerald-300">
-                      {accepted.toLocaleString()}
+                      {formatNumber(accepted)}
                     </span>
                     <span className="text font-bold text-emerald-600/70 dark:text-emerald-400/70">
                       ({percentageComplete}%)
